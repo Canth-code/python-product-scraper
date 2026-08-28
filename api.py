@@ -4,12 +4,11 @@ from pydantic import BaseModel
 import math
 
 from database import (
-    get_product_count,
-    get_products_paginated,
-    get_product_by_id,
-    search_products,
-    get_search_count,
-    get_stats as get_database_stats
+    get_book_by_id,
+    get_books_paginated,
+    get_stats,
+    get_total_count,
+    search_books as db_search_books
 )
 
 
@@ -41,6 +40,7 @@ class SearchResponse(BaseModel):
     max_price: float | None
     sort: SortOption
     count: int
+    total: int
     books: list[Book]
 
 
@@ -65,64 +65,9 @@ def get_books(
 ):
     offset = (page - 1) * limit
 
-    total = get_product_count()
+    total = get_total_count()
 
-    rows = get_products_paginated(
-        limit,
-        offset
-    )
-
-    books = [
-        {
-            "id": row[0],
-            "name": row[1],
-            "price": row[2],
-            "url": row[3],
-            "availability": row[4]
-        }
-        for row in rows
-    ]
-
-    pages = math.ceil(total / limit) if total > 0 else 0
-
-    return {
-        "page": page,
-        "limit": limit,
-        "total": total,
-        "pages": pages,
-        "books": books
-    }
-
-
-@app.get("/books/search", response_model=BooksResponse)
-def search_books(
-        q: str = "",
-        min_price: float | None = None,
-        max_price: float | None = None,
-        sort: SortOption = SortOption.name,
-        page: int = Query(1, ge=1),
-        limit: int = Query(20, ge=1, le=100)
-):
-    if min_price is not None and max_price is not None:
-        if min_price > max_price:
-            raise HTTPException(
-                status_code=400,
-                detail="min_price cannot be greater than max_price"
-            )
-
-    offset = (page - 1) * limit
-
-    total = get_search_count(
-        query_text=q,
-        min_price=min_price,
-        max_price=max_price
-    )
-
-    rows = search_products(
-        query_text=q,
-        min_price=min_price,
-        max_price=max_price,
-        sort=sort.value,
+    rows = get_books_paginated(
         limit=limit,
         offset=offset
     )
@@ -148,9 +93,53 @@ def search_books(
         "books": books
     }
 
+
+@app.get("/books/search", response_model=SearchResponse)
+def search_books(
+        q: str = "",
+        min_price: float | None = None,
+        max_price: float | None = None,
+        sort: SortOption = SortOption.name
+):
+    if min_price is not None and max_price is not None:
+        if min_price > max_price:
+            raise HTTPException(
+                status_code=400,
+                detail="min_price cannot be greater than max_price"
+            )
+
+    rows = db_search_books(
+        query=q,
+        min_price=min_price,
+        max_price=max_price,
+        sort=sort.value
+    )
+
+    books = [
+        {
+            "id": row[0],
+            "name": row[1],
+            "price": row[2],
+            "url": row[3],
+            "availability": row[4]
+        }
+        for row in rows
+    ]
+
+    return {
+        "query": q,
+        "min_price": min_price,
+        "max_price": max_price,
+        "sort": sort,
+        "count": len(books),
+        "total":len(books),
+        "books": books
+    }
+
+
 @app.get("/stats")
-def get_stats():
-    row = get_database_stats()
+def stats():
+    row = get_stats()
 
     return {
         "total_products": row[0],
@@ -163,7 +152,7 @@ def get_stats():
 
 @app.get("/books/{book_id}", response_model=Book)
 def get_book(book_id: int):
-    row = get_product_by_id(book_id)
+    row = get_book_by_id(book_id)
 
     if row is None:
         raise HTTPException(
