@@ -1,0 +1,11 @@
+.git
+.gitignore
+pycache
+*.pyc
+.pytest_cache
+.venv
+venv
+*.log
+products.csv
+products.json
+products.xlsx
